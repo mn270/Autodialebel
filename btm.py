@@ -1,20 +1,21 @@
 import numpy as np
 import pyLDAvis
-from biterm.btm import oBTM
+from biterm.cbtm import oBTM
 from sklearn.feature_extraction.text import CountVectorizer
 from biterm.utility import vec_to_biterms, topic_summuary
 from numpy import save
 import pandas as pd
-
+from sklearn.feature_extraction import text
 
 if __name__ == "__main__":
-    path = "/home/marcin/Pobrane/atis/atis-train.csv"
+    path = "atis.train.csv"
     data = pd.read_csv(path)
-    data_list = data['TRAIN'].tolist()
-    texts = open('/home/marcin/Pobrane/biterm-master/data/reuters.titles').read().splitlines()[:50]
+    data_list = data['tokens'].tolist()
 
     # vectorize texts
-    vec = CountVectorizer(stop_words='english')
+    my_additional_stop_words = ['BOS', 'EOS','bos','eos']
+    stop_words = text.ENGLISH_STOP_WORDS.union(my_additional_stop_words)
+    vec = CountVectorizer(stop_words=stop_words)
     X = vec.fit_transform(data_list).toarray()
 
     # get vocabulary
@@ -31,7 +32,7 @@ if __name__ == "__main__":
 
     print("\n\n Visualize Topics ..")
     vis = pyLDAvis.prepare(btm.phi_wz.T, topics, np.count_nonzero(X, axis=1), vocab, np.sum(X, axis=0))
-    pyLDAvis.save_html(vis, '/home/marcin/Pobrane/biterm-master/vis/simple_btm.html')
+    pyLDAvis.save_html(vis, '/home/pracownik/PycharmProjects/simple_btm.html')
 
     print("\n\n Topic coherence ..")
     topic_summuary(btm.phi_wz.T, X, vocab, 10)
@@ -39,4 +40,4 @@ if __name__ == "__main__":
     print("\n\n Texts & Topics ..")
     for i in range(len(data_list)):
         print("{} (topic: {})".format(data_list[i], topics[i].argmax()))
-    save('topics.npy', topics)
+    save('topics_new.npy', topics)

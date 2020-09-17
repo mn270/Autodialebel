@@ -1,66 +1,91 @@
-import pandas as pd
-from flair.data import Sentence
-from flair.embeddings import StackedEmbeddings
-from flair.embeddings import FlairEmbeddings
+from sklearn.cluster import AgglomerativeClustering
+from sklearn.cluster import DBSCAN
+from sklearn.cluster import KMeans
+from sklearn.cluster import Birch
+from sklearn.cluster import SpectralClustering
+from scipy.cluster.hierarchy import dendrogram
+from scipy.cluster.hierarchy import linkage
 import numpy as np
-import nltk
-from collections import Counter
-from tqdm import tqdm
+from sklearn import metrics
+from sklearn.neighbors import KNeighborsClassifier
+import matplotlib.pyplot as plt
+import pandas as pd
+from sklearn.manifold import TSNE
+from numpy import load
+import collections
+import pickle
 from numpy import save
 
-TAGS = [ 'CC', 'CD', 'DT', 'EX' ,'FW', 'IN' ,'JJ' ,'JJR' ,'JJS', 'LS', 'MD', 'NN', 'NNS', 'NNP', 'NNPS', 'PDT', 'POS', 'PRP', 'PRP$', 'RB', 'RBR', 'RBS', 'RP', 'TO', 'UH', 'VB', 'VBD', 'VBG', 'VBN',  'VBP', 'VBZ', 'WDT', 'WP', 'WP$', 'WRB' ]
-path = "/home/marcin/Pobrane/atis/atis-train.csv"
-data = pd.read_csv(path)
+feauter_topic = load('encode_topics_new.npy')
+feauter_word = load('encode_words_new.npy')
+feauter_key = load('encode_key_new.npy')
+feauter_pos = load('encode_pos_new.npy')
+path = "atis.train.csv"
+FULL_DATA = pd.read_csv(path)
+INTENT = FULL_DATA["intent"].tolist()
+DATA = FULL_DATA["tokens"].tolist()
 
-flair_forward  = FlairEmbeddings('news-forward-fast')
-flair_backward = FlairEmbeddings('news-backward-fast')
+KEYS = [*dict.fromkeys(INTENT)]
 
-stacked_embeddings = StackedEmbeddings( embeddings = [
-                                                       flair_forward,
-                                                       flair_backward
-                                                      ])
-data_list = data['TRAIN'].tolist()
-w_embedding = []
-pos = []
-feauter_pos = []
-Nons_emb = []
-Nons_word = []
-Nons_vec = []
-for s in tqdm(data_list):
-    sentence = Sentence(s)
-    stacked_embeddings.embed(sentence)
-    w = []
-    for token in sentence:
-        w.append(token.embedding.cpu().detach().numpy())
-    w = np.array(w)
-    semantic =  w.mean(0)
-    w_embedding.append(semantic)
-
-    token = nltk.word_tokenize(s)
-    tags = nltk.pos_tag(token)
-    counts = Counter(tag for word, tag in tags)
-    vector = np.zeros(len(TAGS))
-    i=0
-    nons = []
-    for tag in tags:
-        if (tag[1] == 'NN' or tag[1] == 'NNP' or tag[1] == 'NNS' or tag[1] == 'NNPS'):
-            Nons_emb.append(w[i])
-            nons.append(w[i])
-            Nons_word.append(tag[0])
+def coefficientmatrix(dict, prediction, data):
+    coeff = np.zeros((max(prediction)+1, len(dict)))
+    for i in range(len(data)):
+        coeff[prediction[i]][dict.index(data[i])]+=1
+    count = collections.Counter(data)
+    i = 0
+    for d in dict:
+        coeff[:, i] = coeff[:, i]/count[d]
         i+=1
-    Nons_vec.append(nons)
-    for t in counts:
-        id = TAGS.index(t)
-        vector[id] = counts[t]
-    feauter_pos.append(vector)
-    pos.append(tags)
-w_embedding = np.array(w_embedding)
-feauter_pos = np.array(feauter_pos)
-Nons_emb = np.array(Nons_emb)
-Nons_word = np.array(Nons_word)
-Nons_vec = np.array(Nons_vec)
-save('feauter_word.npy', w_embedding)
-save('feauter_pos.npy', feauter_pos)
-save('nons_emb.npy', Nons_emb)
-save('nons_word.npy', Nons_word)
-save('nons_vec.npy', Nons_vec)
+    coeff = coeff/coeff.max()
+    return coeff
+
+X = np.concatenate((feauter_topic, feauter_word), axis=1)
+X = np.concatenate((X, feauter_pos), axis=1)
+assembled_feauter = np.concatenate((X, feauter_topic), axis=1)
+#assembled_feauter = feauter_word
+
+# dendrogram = dendrogram(linkage(X, method = "ward"))
+# plt.title('Dendrogram')
+# plt.xlabel('Customers')
+# plt.ylabel('Euclidean distances')
+# plt.show()
+#hc = AgglomerativeClustering(distance_threshold=5, affinity = 'euclidean', linkage ='ward',n_clusters=None)
+#hc = AgglomerativeClustering( affinity = 'euclidean', linkage ='ward',n_clusters= 17)
+#hc = DBSCAN(eps=0.5, min_samples=15).fit(assembled_feauter)
+#hc = KMeans(n_clusters=17)
+hc = SpectralClustering(n_clusters=17)
+y_hc=hc.fit_predict(assembled_feauter)
+# neigh = KNeighborsClassifier(n_neighbors=3)
+# neigh.fit(X, y_hc)
+# filename = 'intention_model.sav'
+# pickle.dump(neigh, open(filename, 'wb'))
+# silhouette_score = metrics.silhouette_score(X, y_hc, metric='euclidean')
+# print("Silhouette_score_hier: ")
+# print(silhouette_score)
+
+# model = TSNE(n_components=2, random_state=1)
+# np.set_printoptions(suppress=True)
+# Y = model.fit_transform(X)
+# plt.scatter(Y[:, 0], Y[:, 1], c=y_hc, s=300, alpha=.6)
+p = coefficientmatrix(KEYS, y_hc, INTENT)
+fig, ax = plt.subplots()
+im = ax.imshow(p)
+ax.set_xticklabels(KEYS)
+ax.set_xticks(np.arange(len(KEYS)))
+ax.set_yticks(np.arange(max(y_hc)+1))
+plt.setp(ax.get_xticklabels(), rotation=45, ha="right",
+         rotation_mode="anchor")
+DATA = np.array(DATA)
+PREDICTION = [DATA, y_hc, INTENT]
+PREDICTION = np.array(PREDICTION).transpose()
+PREDICTION = PREDICTION[np.argsort(PREDICTION[:, 1])]
+for j in range(len(y_hc)):
+    print(DATA[j])
+    print(y_hc[j])
+
+plt.show()
+df = pd.DataFrame({'intent': y_hc})
+df.to_csv('intent.csv',index=False)
+PREDICTION.tolist()
+dp = pd.DataFrame({'Text': PREDICTION[:, 0], 'Predict': PREDICTION[:, 1],'Intent': PREDICTION[:, 2]})
+dp.to_csv('compare.csv',index=False)
